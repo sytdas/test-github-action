@@ -1,0 +1,64 @@
+name: Release tagging workflow
+
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # You can test your matrix by printing the current Python version
+      - name: Display Python version
+        run: python -c "import sys; print(sys.version)"
+      - name: Install semver
+        run: pip install semver
+      - name: Get latest tag
+        run: echo "CURRENT_VERSION=$(git describe --tags --abbrev=0 || echo '0.0.0')" >> "$GITHUB_ENV"
+      - name: Get next tag
+        run: echo "NEXT_VERSION=$(pysemver nextver $CURRENT_VERSION patch)" >> "$GITHUB_ENV"
+      - name: Create tag
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const nextVersion = process.env.NEXT_VERSION
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${nextVersion}`,
+              sha: context.sha
+            })
+      - name: Publish release
+        uses: actions/github-script@v5
+        with:
+          script: |
+            const nextVersion = process.env.NEXT_VERSION
+            github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: nextVersion,
+              target_commitish: context.sha,
+              name: `Release ${nextVersion}`,
+              body: `Release ${nextVersion} created automatically by GitHub Actions.`,
+              draft: false,
+              prerelease: false,
+              make_latest: 'true',
+              generate_release_notes: true,
+            })
+      - name: Summary
+        run: echo "Release $NEXT_VERSION" >> $GITHUB_STEP_SUMMARY
